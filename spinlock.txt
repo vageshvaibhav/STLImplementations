@@ -1,0 +1,755 @@
+#pragma once
+
+#include "stdafx.h"
+
+#include <ctime>
+#include <iostream>
+#include <iomanip>
+#include <thread>
+#include <tchar.h>
+#include <codecvt>
+
+//#include "f:\Projects\fix-oms\FIX\quickfix-master\src\C++\double-conversion\double-conversion.h"
+//#include "f:\Projects\fix-oms\FIX\quickfix-master\src\C++\double-conversion\utils.h"
+
+extern vector<long long> feedProcessingTime;
+//extern vector<string> logStrings;
+
+namespace FIX_OMS
+{
+	class Utils {
+
+		static std::atomic<std::_Uint8_t> UniqueId;
+		//static std::_Uint8_t GetNextUniqueId();
+		static std::_Uint8_t GetNextUniqueId() {
+			return ++UniqueId;
+		}
+	public :    
+		//static string GetUniqueId(string prefix);
+
+		static std::string GetUniqueId(std::string prefix)
+		{
+			stringstream uniqueId;
+			uniqueId <<  prefix << "_" << GetNextUniqueId() << "_" << GetTickCount();
+			return move(uniqueId.str());
+		}
+
+		static const std::string GetCurrentDateTime() {
+			SYSTEMTIME time;
+			GetLocalTime(&time);
+			WORD millis = (time.wSecond * 1000) + time.wMilliseconds;
+
+			std::stringstream ss;
+			ss << time.wYear << time.wMonth << time.wDay << "-" << time.wHour << ":" << time.wMinute << ":" << time.wSecond << ":" << time.wMilliseconds;
+			return ss.str();
+		}
+
+		static long GetSecondsSinceEpochTime()
+		{
+			auto currentTimePoint = std::chrono::system_clock::now();
+			return std::chrono::duration_cast<std::chrono::seconds>(currentTimePoint.time_since_epoch()).count();
+		}
+
+		static string GetUTCDateTimeString(std::tm& UTCTime)
+		{
+			//YYYYMMDD-HH:MM:SS.sss
+			std::ostringstream oss;
+			oss << std::put_time(&UTCTime, UTC_DATE_TIME_FORMAT);
+			return oss.str();
+		}
+
+		static string GetLocalMarketTimeString(std::tm& UTCTime)
+		{
+			//YYYYMMDD-HH:MM:SS.sss
+			std::ostringstream oss;
+			oss << std::put_time(&UTCTime, LOCAL_MARKET_TIME_FORMAT);
+			return oss.str();
+		}
+
+		static std::tm GetDateTimeFromString(string dateString)
+		{
+			istringstream iss(dateString);
+			std::tm time = {};
+			iss >> std::get_time(&time, UTC_DATE_TIME_FORMAT);
+		}
+
+		static void ClearFeedTimings()
+		{
+			feedProcessingTime.clear();
+		}
+
+		static void WriteFeedTimings()
+		{
+			TCHAR moduleFile[MAX_PATH + 1] = {'\0'};
+			GetModuleFileName(NULL, moduleFile, MAX_PATH);
+			basic_string<TCHAR> fileName(moduleFile);
+			TCHAR pattern[] = {'\\/'};
+			basic_string<TCHAR> path = fileName.substr(0, fileName.find_last_of( _T("\\/") ));
+
+			auto fNameW = path.append(_T("\\Configuration\\FeedTimings.txt"));
+
+			std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converterX;
+			auto fNameStr = converterX.to_bytes(fNameW);
+
+			std::ofstream output_file(fNameStr);
+			std::sort(feedProcessingTime.begin(), feedProcessingTime.end());
+			stringstream str;
+			str << *feedProcessingTime.begin();
+			output_file << "Minimum time taken for processing data feed: " << str.str() << "\n";
+
+			str << feedProcessingTime[feedProcessingTime.size() -1];
+			output_file << "Maximum time taken for processing data feed: " << str.str() << "\n";
+
+			auto countAbove15 = std::count_if(feedProcessingTime.begin(), feedProcessingTime.end(), [&](long long x) { return x > 15;});
+			auto countBelow15 = std::count_if(feedProcessingTime.begin(), feedProcessingTime.end(), [&](long long x) { return x < 15;});
+			auto count25100 = std::count_if(feedProcessingTime.begin(), feedProcessingTime.end(), [&](long long x) { return x > 25 && x < 100;});
+			auto countAbove100 = std::count_if(feedProcessingTime.begin(), feedProcessingTime.end(), [&](long long x) { return x > 100;});
+
+			long long averageTiming = 0;
+			for(const auto& timing : feedProcessingTime)
+				averageTiming += timing;
+			averageTiming /= feedProcessingTime.size();
+
+			str << "Average time taken for processing data feed: " << averageTiming << "\n";
+			output_file << str.str() << "\n";
+
+			output_file.close();
+		}
+
+
+		//static void WriteLogs()
+		//{
+		//	TCHAR moduleFile[MAX_PATH + 1] = { '\0' };
+		//	GetModuleFileName(NULL, moduleFile, MAX_PATH);
+		//	basic_string<TCHAR> fileName(moduleFile);
+		//	TCHAR pattern[] = { '\\/' };
+		//	basic_string<TCHAR> path = fileName.substr(0, fileName.find_last_of(_T("\\/")));
+
+		//	auto fNameW = path.append(_T("\\FIXAppLogs.txt"));
+
+		//	std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t> converterX;
+		//	auto fNameStr = converterX.to_bytes(fNameW);
+
+		//	std::ofstream output_file(fNameStr);
+		//	for (const auto& logStr : logStrings)
+		//	{
+		//		output_file << logStr << "\n";
+		//	}			
+
+		//	output_file.close();
+		//}
+
+		//static std::string GetThreadId(int strategyId, int targetNumber)
+		//{
+		//	stringstream threadId;
+		//	threadId << strategyId << "|" << targetNumber;
+		//	return threadId.str();
+		//}
+
+		static int GetStrategyIdFromClOrdId(const string& threadId)
+		{
+			auto pos = threadId.find('|');
+			int strategyId = 0;
+			if (pos != std::string::npos)
+				strategyId = atoi(threadId.substr(0, pos).c_str());
+			
+			return strategyId;
+		}
+
+		static int GetTargetNumberFromClOrdId(const string& clOrdId)
+		{
+			int targetNumber = 0;
+
+			auto pos = clOrdId.find('_');
+			if (pos != std::string::npos)
+			{
+				auto substring = clOrdId.substr(0, pos);
+				auto firstPipePos = substring.find('|');
+				if (firstPipePos != std::string::npos)
+				{
+					auto secondPipePos = substring.find('|', firstPipePos + 1);
+					if (secondPipePos != std::string::npos)
+						targetNumber = atoi(substring.substr(secondPipePos + 1, substring.length() - (secondPipePos + 1)).c_str());
+				}
+				
+			}
+			return targetNumber;
+		}
+
+		static bool IsOrderEntryRequest(const string& clOrdId)
+		{
+			auto startPos = clOrdId.find('_');
+			if (startPos != std::string::npos)
+			{
+				auto endPos = clOrdId.find('_', startPos + 1);
+				auto substring = clOrdId.substr(startPos + 1, endPos - (startPos + 1));
+				if (substring.compare(MarketOrderEntryRequestPrefix) == 0 ||
+					substring.compare(LimitIOCOrderEntryRequestPrefix) == 0)
+					return true;
+				else
+					return false;
+			}
+			return false;
+		}
+
+		static bool IsCloseOrderResponse(const string& clOrdId)
+		{
+			auto startPos = clOrdId.find('_');
+			if (startPos != std::string::npos)
+			{
+				auto endPos = clOrdId.find('_', startPos + 1);
+				auto substring = clOrdId.substr(startPos + 1, endPos - (startPos + 1));
+				if (substring.compare(CloseOrderRequestPrefix) == 0 ||
+					substring.compare(CloseAllCancelREquestPrefix) == 0 ||
+					substring.compare(CloseAllPositionCloseOrderRequestPrefix) == 0)
+					return true;
+				else
+					return false;
+			}
+			return false;
+		}
+
+		static bool IsLimitIOCResponse(const string& clOrdId)
+		{
+			auto startPos = clOrdId.find('_');
+			if (startPos != std::string::npos)
+			{
+				auto endPos = clOrdId.find('_', startPos + 1);
+				auto substring = clOrdId.substr(startPos + 1, endPos - (startPos + 1));
+				if (substring.compare(LimitIOCOrderEntryRequestPrefix) == 0 ||
+					substring.compare(LimitIOCOrderCancelRequestPrefix) == 0)
+					return true;
+				else
+					return false;
+			}
+			return false;
+		}
+
+		static void GetThreadIdFromClOrdId(const string& clOrdId, string& threadId)
+		{
+			auto pos = clOrdId.find('_');
+			if (pos != std::string::npos)
+			{
+				auto substring = clOrdId.substr(0, pos);
+				auto pipePos = substring.find('|');
+				if (pipePos != std::string::npos)
+					threadId = substring.substr(0, pipePos);
+			}
+		}
+
+		static void GetThreadIdFromClOrdId1(const string& clOrdId, string& threadId)
+		{
+			auto pos = clOrdId.find('_');
+			if (pos != std::string::npos)
+			{
+				auto substring = clOrdId.substr(0, pos);
+				auto pipePos = substring.find('|');
+				if (pipePos != std::string::npos)
+					threadId = substring.substr(0, pipePos);
+
+				auto firstPipePos = substring.find('|');
+				if (firstPipePos != std::string::npos)
+				{
+					auto secondPipePos = substring.find('|', firstPipePos + 1);
+					if (secondPipePos != std::string::npos)
+						threadId = substring.substr(0, secondPipePos);
+				}
+			}
+		}
+
+	};
+
+	//std::_Uint8_t Utils::GetNextUniqueId() {
+	//    return ++UniqueId;
+	//}
+	//
+	//std::string Utils::GetUniqueId(std::string prefix)
+	//{
+	//	stringstream uniqueId;
+	//	uniqueId <<  prefix << "_" << GetNextUniqueId();
+	//	return move(uniqueId.str());
+	//}
+
+	class SpinLock
+	{
+	public:
+		SpinLock(std::atomic_flag& flag) : locked(flag) { }
+		~SpinLock() { Unlock(); }
+
+		void Lock()
+		{
+			while (locked.test_and_set(std::memory_order_acquire)) { ; }
+		}
+
+		void Unlock()
+		{
+			locked.clear(std::memory_order_release);
+		}
+	private:
+		std::atomic_flag& locked;
+	};
+
+	class WaitableObject
+	{
+		public:
+			void Wakeup(const string& key)
+			{
+				unique_lock<mutex> locker(mu);
+				if(waitKey.compare(key) == 0)
+				{
+					waitKey.clear();
+					locker.unlock();
+					cv.notify_one();
+				}
+			}
+
+			void Wait(const string& key)
+			{
+				unique_lock<mutex> locker(mu);
+				waitKey = key;
+				//cv.wait_for(locker, chrono::milliseconds(WAIT_TIME)); 
+				cv.wait(locker, [&] () { return waitKey.empty(); } );
+				locker.unlock();
+		
+				return;
+			}
+
+		private:
+			string waitKey;
+			std::condition_variable cv;
+			std::mutex mu;
+	};
+
+	enum EventType
+	{
+		Invalid_Event,
+		Trgt1_Timeout,
+		Trgt2_Timeout,
+		StopLoss1_Timeout,
+		StopLoss2_Timeout,
+		Global_Lock_Event,
+		Global_Close_event,
+		BreakEven_Timeout,
+		EventList_Empty,
+		LockPrice_Active,
+		LockPrice_Inactive
+	};
+
+	struct EventInfo
+	{
+		EventInfo() : EventId(EventType::Invalid_Event)
+		{
+
+		}
+
+		EventInfo(int eventId, int strategyId, double time) : EventId(eventId), StrategyId(strategyId), TimeInterval(time)
+		{
+
+		}
+
+		int		EventId;
+		int		StrategyId;
+		double	TimeInterval;
+		string	ThreadId;
+
+		bool operator<(const EventInfo& other)
+		{
+			return TimeInterval < other.TimeInterval;
+		}
+		
+		EventInfo operator-(const EventInfo& other)
+		{
+			EventInfo event(EventId, StrategyId, TimeInterval);
+			event.TimeInterval -= other.TimeInterval;
+			return event;
+		}
+	};
+
+	template <typename T>
+	class TimerThread
+	{
+	public:
+		TimerThread() : stop(true), paused(false), th(), shPtr(nullptr)//, timeInterval(std::chrono::seconds(0))
+		{
+
+		}
+
+		~TimerThread()
+		{
+			stop = true;
+			paused = false;
+			if (th.joinable())
+				th.join();
+			shPtr = nullptr;
+		}
+		void PauseThread()
+		{
+			paused = true;
+		}
+
+		void ResumeThread()
+		{
+			paused = false;
+		}
+
+		void Run()
+		{
+			bool eventListEmptyMsgSent = false;
+			EventInfo eventInfo;
+			while (!stop)
+			{
+				if (EventCount() > 0)
+				{
+					auto start = std::chrono::high_resolution_clock::now();
+					eventInfo = FrontElement();
+					//this_thread::sleep_for(std::chrono::duration<double>(eventInfo.TimeInterval - 2));				
+
+					auto waitEnd = std::chrono::steady_clock::now();
+					// version for systems without thread support
+					while (std::chrono::duration_cast<std::chrono::seconds>(waitEnd - start).count() < eventInfo.TimeInterval && paused == false)
+					{
+						this_thread::sleep_for(std::chrono::duration<int, std::milli>(500));
+						if (EventCount() == 0) //To handle the case where, eventlist was cleared when the thread was in sleep. No need to process it.
+							break;
+						waitEnd = std::chrono::steady_clock::now();						
+					}
+					if (EventCount() == 0) //To handle the case where, eventlist was cleared when the thread was in sleep. No need to process it.
+						continue;
+					PopFrontElement();
+					if(shPtr != nullptr)
+						shPtr->OnTimer(eventInfo, buyOrSell);
+				}
+				else
+				{
+					if (!eventListEmptyMsgSent)
+					{
+						eventInfo.EventId = EventType::EventList_Empty;
+						if (shPtr != nullptr)
+							shPtr->OnTimer(eventInfo, buyOrSell);
+						eventListEmptyMsgSent = true;
+					}
+					//while (paused) {}
+				}
+			}
+		}
+
+		void StartThread()
+		{
+			stop = false;
+			//started = true;
+			paused = false;
+			th = move(thread(&TimerThread::Run, this));
+		}
+
+		void StopThread()
+		{
+			stop = true;
+			//started = false;
+			if (th.joinable())
+				th.join();
+		}
+		bool ISThreadPaused() { return paused; }
+		bool IsThreadRunning() { return !stop; }
+		
+		void ClearEventList()
+		{
+			SpinLock spinLock(eventListFlag);
+			spinLock.Lock();
+
+			eventInfoList.clear();
+		}
+
+		void Initialize(std::list<EventInfo> eventList, Order_Side buyOrSell, T* ptr)
+		{
+			SpinLock spinLock(eventListFlag);
+			spinLock.Lock();
+
+			eventInfoList = eventList;
+			this->buyOrSell = buyOrSell;
+			shPtr = ptr;
+		}
+
+	private:
+		int EventCount()
+		{
+			SpinLock spinLock(eventListFlag);
+			spinLock.Lock();
+
+			return eventInfoList.size();
+		}
+
+		EventInfo FrontElement()
+		{
+			SpinLock spinLock(eventListFlag);
+			spinLock.Lock();
+
+			if (eventInfoList.size() > 0)
+				return eventInfoList.front();
+			else
+				return EventInfo();
+		}
+
+		void PopFrontElement()
+		{
+			SpinLock spinLock(eventListFlag);
+			spinLock.Lock();
+
+			if (eventInfoList.size() > 0)
+				eventInfoList.pop_front();
+		}
+
+		TimerThread(const TimerThread& rhs);
+		TimerThread& operator=(const TimerThread& rhs);
+
+		std::thread th;
+		std::atomic<bool> stop;
+		//std::atomic<bool> started;
+		std::atomic<bool> paused;
+		std::list<EventInfo> eventInfoList;
+		std::atomic_flag eventListFlag = ATOMIC_FLAG_INIT;
+		Order_Side buyOrSell;
+		T* shPtr;
+	};
+
+	class TradingStrategy;
+	struct ThreadContext
+	{
+		ThreadContext()
+		{
+			BuyOrSell = Order_Side::InvalidSide;
+		}
+
+		shared_ptr<TradingStrategy> Strategy;
+		shared_ptr< TradingStrategy> SecondaryStrategy;
+		//float	Qty;
+		Order_Side BuyOrSell;
+		string ThreadId;
+	};
+
+	enum class MessageCodes
+	{
+		Invalid_Message_Code,
+		Exit_Thread,
+		Execution_Report,
+		Target1_Timeout,
+		Target2_Timeout,
+		SL1_Timeout,
+		SL2_Timeout,
+		Open_Position,
+		Place_Limit_Order,
+		Place_SL_Order,
+		Close_All_Positions,
+		Business_Message_Reject,
+		Target1_Finished,
+		Target2_Finished,
+		StopCancelDelay_Close,
+		StopCancelDelay_Close_Partial,
+		StopCancelDelay_Activate_SL,
+		StopCancelDelay_ER_ClearAll,
+		StopCancelDelay_ER_Replace_Stop,
+		Close_All_Timer_Event,
+		Lock_Price_Timer_Event,
+		Update_UI,
+		BreakEven_Target_Hit,
+		BreakEven_Timeout,
+		EventList_Empty,
+		EventList_Empty_Global_Timer,
+		EventList_Empty_LockPrice,
+		EventList_Empty_LockPrice_Restart,
+		LockPrice_Inactive,
+		StopCancelDelay_Close_Ensure,
+		Close_All_Positions_For_Default
+	};
+
+	enum StopOrderRTStatus
+	{
+		Invalid_Status = 0,
+		Stop_Order_Cancel_In_Progress,
+		Stop_Order_Cancelled,
+		Stop_Order_Movement_In_Progress,
+		Stop_Order_Movement_Finished,
+		Stop_Order_Pending_Cancel_Op_In_Progress,
+		Stop_Order_Pending_Move_Op_In_Progress,
+		Stop_Order_Pending_Operation_Finished		
+	};
+
+	enum DelayStopMessageCode
+	{
+		Invalid_MessageCode,
+		Cancel_Stop_Order,
+		Move_Stop_Order,
+		Reset_Delayed_Stop_Operation
+	};
+
+	struct DataPacket
+	{
+		~DataPacket()
+		{
+			MessagePtr = nullptr;
+		}
+
+		MessageCodes MessageCode = MessageCodes::Invalid_Message_Code;
+		int BrokerId = 0;
+		bool ForSecondary = false;
+		void* MessagePtr = nullptr;
+		//char Buffer[2048] = { 0 };
+	};
+
+	struct DelayedStopCancel
+	{
+		DelayedStopCancel() 
+		{ 
+			StopQty = 0.0;
+			MoveQty = 0.0;
+			StageNumber = -1;
+			ThreadId.clear();
+			StopMessageCode = DelayStopMessageCode::Invalid_MessageCode;
+			ProcessingMessageCode = MessageCodes::Invalid_Message_Code;
+		}
+
+		double					StopQty;
+		double					MoveQty;//It indicates the quantity by which stop order needs to be moved.
+		int						StageNumber;
+		string					ThreadId;
+		DelayStopMessageCode	StopMessageCode;
+		MessageCodes			ProcessingMessageCode;
+	};
+
+	struct TargetRuntimeData
+	{
+		TargetRuntimeData() 
+		{
+			MarketOrderId.clear();
+			LimitOrderId.clear();
+			StopOrderId.clear();
+			PositionId.clear();
+			StopOrderStatus = StopOrderRTStatus::Invalid_Status;
+			StopOrder = Config_Values::Invalid_Value;
+		}
+
+		//struct OrderDetails OrderInfo;
+		string	MarketOrderId;
+		string	LimitOrderId;
+		string	StopOrderId;
+		string	PositionId;
+		int		BrokerId = 0;
+		int		TargetNumber = 0;
+		Config_Values	StopOrder;
+		int		StageNumber = -1;
+		StopOrderRTStatus	StopOrderStatus;
+		DelayedStopCancel	StopPendingOperation;
+		DelayedStopCancel	StopPendingOperation1;
+	};
+
+	
+
+	class ProducerConsumerQueue
+	{
+	public:
+		ProducerConsumerQueue() {};
+		~ProducerConsumerQueue()
+		{
+		}
+
+		ProducerConsumerQueue(const ProducerConsumerQueue& other) = delete;
+		ProducerConsumerQueue& operator=(const ProducerConsumerQueue& other) = delete;
+
+		void AddToQueue(shared_ptr<DataPacket> dataPacket)
+		{
+			unique_lock<mutex> locker(mu);
+			msgQueue.push(dataPacket);
+			locker.unlock();
+			cv.notify_one();
+		}
+
+		void GetFromQueue(shared_ptr<DataPacket>& dataPacket)
+		{
+			unique_lock<mutex> locker(mu);
+			while (msgQueue.empty())
+			{
+				cv.wait(locker, [&]() {return !msgQueue.empty(); });
+			}
+
+			dataPacket = msgQueue.front();
+			msgQueue.pop();
+		}
+	private:
+		std::queue<shared_ptr<DataPacket>> msgQueue;
+		std::condition_variable cv;
+		std::mutex mu;
+	};
+
+	class StrategyEngine;
+	class WorkerThread
+	{
+	public:
+		WorkerThread() : workerThread()//stop(false),
+		{}
+
+		void Initialize(StrategyEngine* enginePtr, const string& uniqueThreadId, const ThreadContext& threadContext)
+		{
+			this->enginePtr = enginePtr;
+			uniqueId = uniqueThreadId;
+			this->threadContext = threadContext;
+		}
+
+		void Initialize(Order_Side buyOrSell)
+		{
+			this->threadContext.BuyOrSell = buyOrSell;
+		}
+
+		void StartThread()
+		{
+			workerThread = move(std::thread(&WorkerThread::Run, this));
+
+		}
+
+		void StopThread()
+		{
+			//stop = true;
+			if (workerThread.joinable())
+				workerThread.join();
+		}
+
+		string GetUniqueId() { return  uniqueId; }
+		ThreadContext GetThreadContext() { return threadContext; }
+		void AddToQueue(shared_ptr<DataPacket> dataPacket);
+		bool IsMessageApplicableToThread(MessageCodes msgCode);
+		bool IsStrategyExecutionThread();
+		void Run();
+	private:
+		//std::atomic<bool> stop;
+		ProducerConsumerQueue msgStore;
+		std::thread workerThread;
+		std::string uniqueId;
+		ThreadContext threadContext;
+		StrategyEngine* enginePtr;
+	};
+
+	//static double_conversion::DoubleToStringConverter dtoa_converter(
+	//	double_conversion::DoubleToStringConverter::NO_FLAGS,
+	//	"INF",
+	//	"NAN",
+	//	'e',
+	//	-6,
+	//	6,
+	//	6 - 1,
+	//	0);
+
+	//int fast_fixed_dtoa(char * buffer, int size, double value)
+	//{
+	//	double_conversion::StringBuilder builder(buffer, size);
+	//	if (!dtoa_converter.ToFixed(value, 6, &builder))
+	//	{
+	//		builder.Reset();
+	//		return 0;
+	//	}
+
+	//	return builder.position();
+	//}
+}
+
+
+
+
+git commit -c 7bba39c8f7fc4ef6d8f364c1817d68297d375fe7
