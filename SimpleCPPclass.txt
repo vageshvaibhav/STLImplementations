@@ -1,0 +1,13 @@
+#include <bits/stdc++.h>
+class SimpleCPP
+{
+
+SimpleCPP();
+SimpleCPP(<param>);
+SimpleCPP(const SimpleCPP& rhs) = default;
+SimpleCPP& opertor=(const SimpleCPP& rhs);
+SimpleCPP(SimpleCPP&& rhs);
+SimpleCPP & operator=(SimpleCPP &&);
+~SimpleCPP();
+
+};
